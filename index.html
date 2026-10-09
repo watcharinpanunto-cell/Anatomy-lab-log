@@ -45,6 +45,7 @@
 
         .btn-submit { width: 100%; padding: 14px; background-color: var(--primary); color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
         .btn-submit:hover { background-color: var(--primary-hover); }
+        .btn-cancel { width: 100%; padding: 10px; background-color: #94a3b8; color: white; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; margin-top: 8px; display: none; }
 
         /* KPI Card Styles */
         .kpi-card { background: #f1f5f9; border-radius: 8px; padding: 12px; margin-bottom: 12px; border-left: 4px solid var(--primary); }
@@ -53,7 +54,7 @@
         .progress-bar { height: 8px; background-color: #cbd5e1; border-radius: 4px; overflow: hidden; margin-top: 8px; }
         .progress-fill { height: 100%; background-color: var(--primary); width: 0%; transition: width 0.3s; }
 
-        /* Table */
+        /* Table & Action Buttons */
         table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 12px; }
         th, td { border: 1px solid var(--border); padding: 8px; text-align: left; }
         th { background-color: #f1f5f9; }
@@ -61,6 +62,10 @@
         .status-completed { background: #dcfce7; color: var(--success); }
         .status-progress { background: #fef3c7; color: var(--warning); }
         .status-pending { background: #fee2e2; color: var(--danger); }
+        
+        .btn-action { padding: 4px 8px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.75rem; color: white; margin-right: 4px; }
+        .btn-edit { background-color: var(--warning); }
+        .btn-delete { background-color: var(--danger); }
     </style>
 </head>
 <body>
@@ -72,14 +77,17 @@
     </header>
 
     <nav>
-        <button class="active" onclick="switchTab(event, 'logTab')">📝 บันทึกงาน</button>
-        <button onclick="switchTab(event, 'historyTab')">📋 รายการบันทึก</button>
-        <button onclick="switchTab(event, 'kpiTab')">📊 สรุป KPI</button>
+        <button id="navLogTab" class="active" onclick="switchTab(event, 'logTab')">📝 บันทึกงาน</button>
+        <button id="navHistoryTab" onclick="switchTab(event, 'historyTab')">📋 รายการบันทึก</button>
+        <button id="navKpiTab" onclick="switchTab(event, 'kpiTab')">📊 สรุป KPI</button>
     </nav>
 
     <!-- TAB 1: FORM -->
     <div id="logTab" class="tab-content active">
+        <h2 id="formTitle" style="font-size:1.1rem; margin-bottom:12px;">กรอกข้อมูลปฏิบัติงาน</h2>
         <form id="dailyForm" onsubmit="saveLog(event)">
+            <input type="hidden" id="editIndex" value="-1">
+
             <div class="form-group">
                 <label>วันที่ปฏิบัติงาน</label>
                 <input type="date" id="date" required>
@@ -143,7 +151,8 @@
                 <textarea id="issueDetail" placeholder="ระบุปัญหา และแนวทางแก้ไข..."></textarea>
             </div>
 
-            <button type="submit" class="btn-submit">💾 บันทึกข้อมูล</button>
+            <button type="submit" id="submitBtn" class="btn-submit">💾 บันทึกข้อมูล</button>
+            <button type="button" id="cancelBtn" class="btn-cancel" onclick="resetForm()">❌ ยกเลิกการแก้ไข</button>
         </form>
     </div>
 
@@ -159,6 +168,7 @@
                         <th>ภารกิจ</th>
                         <th>ผลงาน</th>
                         <th>สถานะ</th>
+                        <th>จัดการ</th>
                     </tr>
                 </thead>
                 <tbody id="historyBody"></tbody>
@@ -181,11 +191,7 @@
 </div>
 
 <script>
-    let logs = JSON.parse(localStorage.getItem('lab_logs')) || [
-        { date: '2026-10-08', subject: 'MD011', kpi: 'S1', desc: 'วางแผนเตรียมร่างอาจารย์ใหญ่ 5 กลุ่ม', target: 5, actual: 5, status: 'Completed' },
-        { date: '2026-10-08', subject: 'MD011', kpi: 'S2', desc: 'ตรวจความถูกต้องของร่างก่อนสอน', target: 10, actual: 9, status: 'Completed' },
-        { date: '2026-10-09', subject: 'Basic Anatomy', kpi: 'S3', desc: 'ตรวจรับร่างหลังเรียน', target: 4, actual: 4, status: 'Completed' }
-    ];
+    let logs = JSON.parse(localStorage.getItem('lab_logs')) || [];
 
     document.getElementById('date').valueAsDate = new Date();
 
@@ -194,7 +200,7 @@
         document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
         
         document.getElementById(tabId).classList.add('active');
-        e.target.classList.add('active');
+        if(e && e.target) e.target.classList.add('active');
 
         if(tabId === 'historyTab') renderHistory();
         if(tabId === 'kpiTab') renderKPI();
@@ -207,7 +213,9 @@
 
     function saveLog(e) {
         e.preventDefault();
-        const newLog = {
+        const editIdx = parseInt(document.getElementById('editIndex').value);
+        
+        const logData = {
             date: document.getElementById('date').value,
             subject: document.getElementById('subjectCode').value,
             kpi: document.getElementById('kpiCategory').value,
@@ -219,17 +227,73 @@
             issue: document.getElementById('hasIssue').checked ? document.getElementById('issueDetail').value : ''
         };
 
-        logs.push(newLog);
+        if (editIdx === -1) {
+            logs.push(logData);
+            alert('บันทึกข้อมูลเรียบร้อยแล้ว!');
+        } else {
+            logs[editIdx] = logData;
+            alert('แก้ไขข้อมูลเรียบร้อยแล้ว!');
+        }
+
         localStorage.setItem('lab_logs', JSON.stringify(logs));
-        alert('บันทึกข้อมูลเรียบร้อยแล้ว!');
+        resetForm();
+    }
+
+    function resetForm() {
         document.getElementById('dailyForm').reset();
+        document.getElementById('editIndex').value = "-1";
+        document.getElementById('formTitle').innerText = "กรอกข้อมูลปฏิบัติงาน";
+        document.getElementById('submitBtn').innerText = "💾 บันทึกข้อมูล";
+        document.getElementById('cancelBtn').style.display = "none";
         document.getElementById('date').valueAsDate = new Date();
+        toggleIssueField();
+    }
+
+    function editLog(index) {
+        const item = logs[index];
+        document.getElementById('editIndex').value = index;
+        document.getElementById('date').value = item.date;
+        document.getElementById('subjectCode').value = item.subject;
+        document.getElementById('kpiCategory').value = item.kpi;
+        document.getElementById('taskDesc').value = item.desc;
+        document.getElementById('targetQty').value = item.target;
+        document.getElementById('actualQty').value = item.actual;
+        document.getElementById('status').value = item.status;
+        document.getElementById('collaborator').value = item.collaborator || '';
+        
+        if (item.issue) {
+            document.getElementById('hasIssue').checked = true;
+            document.getElementById('issueDetail').value = item.issue;
+        } else {
+            document.getElementById('hasIssue').checked = false;
+            document.getElementById('issueDetail').value = '';
+        }
+        toggleIssueField();
+
+        document.getElementById('formTitle').innerText = "✏️ แก้ไขรายการปฏิบัติงาน";
+        document.getElementById('submitBtn').innerText = "🔄 อัปเดตข้อมูล";
+        document.getElementById('cancelBtn').style.display = "block";
+
+        // Switch to Form Tab
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
+        document.getElementById('logTab').classList.add('active');
+        document.getElementById('navLogTab').classList.add('active');
+    }
+
+    function deleteLog(index) {
+        if (confirm('คุณต้องการลบรายการนี้ใช่หรือไม่?')) {
+            logs.splice(index, 1);
+            localStorage.setItem('lab_logs', JSON.stringify(logs));
+            renderHistory();
+        }
     }
 
     function renderHistory() {
         const tbody = document.getElementById('historyBody');
         tbody.innerHTML = '';
-        logs.slice().reverse().forEach(log => {
+        logs.slice().reverse().forEach((log, revIdx) => {
+            const realIndex = logs.length - 1 - revIdx;
             const statusClass = log.status === 'Completed' ? 'status-completed' : (log.status === 'In Progress' ? 'status-progress' : 'status-pending');
             tbody.innerHTML += `
                 <tr>
@@ -238,6 +302,10 @@
                     <td>${log.desc}</td>
                     <td>${log.actual}/${log.target}</td>
                     <td><span class="status-tag ${statusClass}">${log.status}</span></td>
+                    <td style="white-space:nowrap;">
+                        <button class="btn-action btn-edit" onclick="editLog(${realIndex})">✏️</button>
+                        <button class="btn-action btn-delete" onclick="deleteLog(${realIndex})">🗑️</button>
+                    </td>
                 </tr>
             `;
         });
